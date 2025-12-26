@@ -2,134 +2,414 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Water } from 'three/examples/jsm/objects/Water.js';
 
-// --- CORE SETUP ---
+// ============= SCENE SETUP =============
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-camera.position.set(100, 80, 100);
+camera.position.set(80, 50, 80);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxPolarAngle = Math.PI / 2 - 0.05;
+controls.target.set(0, 15, 0);
+
 const clock = new THREE.Clock();
 
-// --- 1. MOODY SKYBOX [cite: 6] ---
-const loader = new THREE.CubeTextureLoader();
-scene.background = loader.setPath('assets/').load([
-    'dark-s_px.jpg', 'dark-s_nx.jpg', 'dark-s_py.jpg', 
-    'dark-s_ny.jpg', 'dark-s_pz.jpg', 'dark-s_nz.jpg'
-]); // Using your dark-s assets
+// ============= NIGHT SKYBOX =============
+const cubeLoader = new THREE.CubeTextureLoader();
+cubeLoader.setPath('./assets/');
 
-// --- 2. VIBRANT EMERALD ISLAND  ---
+const nightSky = cubeLoader.load(
+    [
+        'dark-s_px.jpg', 'dark-s_nx.jpg',
+        'dark-s_py.jpg', 'dark-s_ny.jpg',
+        'dark-s_pz.jpg', 'dark-s_nz.jpg'
+    ],
+    () => {
+        console.log('✓ Night skybox loaded successfully');
+        scene.background = nightSky;
+    },
+    undefined,
+    (err) => {
+        console.error('✗ Skybox loading error:', err);
+        scene.background = new THREE.Color(0x0a0a2a);
+    }
+);
+
+// ============= FOG =============
+scene.fog = new THREE.FogExp2(0x0a0a2a, 0.0008);
+
+// ============= LIGHTS =============
+// Strong Ambient Light
+const ambientLight = new THREE.AmbientLight(0x5566aa, 2.5);
+scene.add(ambientLight);
+
+// Moon Light (main directional - BRIGHT)
+const moonLight = new THREE.DirectionalLight(0xaabbff, 3.0);
+moonLight.position.set(150, 250, 150);
+moonLight.castShadow = true;
+moonLight.shadow.mapSize.width = 4096;
+moonLight.shadow.mapSize.height = 4096;
+moonLight.shadow.camera.left = -120;
+moonLight.shadow.camera.right = 120;
+moonLight.shadow.camera.top = 120;
+moonLight.shadow.camera.bottom = -120;
+moonLight.shadow.camera.near = 50;
+moonLight.shadow.camera.far = 500;
+moonLight.shadow.bias = -0.0005;
+moonLight.shadow.normalBias = 0.02;
+scene.add(moonLight);
+
+// Additional fill light
+const fillLight = new THREE.HemisphereLight(0x4455bb, 0x222244, 1.5);
+scene.add(fillLight);
+
+// ============= ISLAND =============
 const islandGeometry = new THREE.CylinderGeometry(35, 40, 15, 64);
-const islandMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x006400, // Deep Jungle Green
-    roughness: 0.6,
-    metalness: 0.1
+const islandMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2d4d2d,
+    roughness: 0.85,
+    metalness: 0.05
 });
 const island = new THREE.Mesh(islandGeometry, islandMaterial);
-island.position.y = 5;
+island.position.y = 7.5;
 island.receiveShadow = true;
+island.castShadow = true;
 scene.add(island);
 
-// Procedural Lush Grass (High Density)
+// ============= GRASS =============
 const grassMeshes = [];
-const grassMat = new THREE.MeshBasicMaterial({ color: 0x32CD32, side: THREE.DoubleSide }); // Bright Lime Green
-for(let i=0; i<1500; i++) {
-    const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 2), grassMat);
+const grassMat = new THREE.MeshStandardMaterial({ 
+    color: 0x3d6d3d,
+    side: THREE.DoubleSide,
+    roughness: 0.9,
+    metalness: 0.0
+});
+
+for (let i = 0; i < 1000; i++) {
+    const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 2.5), grassMat);
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.random() * 32;
-    blade.position.set(Math.cos(angle)*radius, 12.5, Math.sin(angle)*radius);
+    blade.position.set(Math.cos(angle) * radius, 15.3, Math.sin(angle) * radius);
+    blade.rotation.y = Math.random() * Math.PI * 2;
+    blade.castShadow = true;
+    blade.receiveShadow = true;
     scene.add(blade);
     grassMeshes.push(blade);
 }
 
-// --- 3. COLORED NEON RAIN  ---
-const rainCount = 25000;
-const rainGeo = new THREE.BufferGeometry();
-const rainPos = new Float32Array(rainCount * 3);
-for(let i=0; i < rainCount * 3; i+=3) {
-    rainPos[i] = Math.random() * 1000 - 500;
-    rainPos[i+1] = Math.random() * 800;
-    rainPos[i+2] = Math.random() * 1000 - 500;
+// ============= TREES =============
+function createTree(x, z) {
+    const tree = new THREE.Group();
+    
+    // Trunk
+    const trunkGeo = new THREE.CylinderGeometry(0.6, 0.8, 7, 8);
+    const trunkMat = new THREE.MeshStandardMaterial({ 
+        color: 0x4a3520, 
+        roughness: 0.95 
+    });
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.y = 3.5;
+    trunk.castShadow = true;
+    trunk.receiveShadow = true;
+    tree.add(trunk);
+    
+    // Leaves
+    const leavesGeo = new THREE.ConeGeometry(3.5, 9, 8);
+    const leavesMat = new THREE.MeshStandardMaterial({ 
+        color: 0x2a5a2a,
+        roughness: 0.9
+    });
+    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+    leaves.position.y = 9;
+    leaves.castShadow = true;
+    leaves.receiveShadow = true;
+    tree.add(leaves);
+    
+    tree.position.set(x, 15, z);
+    return tree;
 }
-rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-// Colored the rain to a glowing Cyan/Blue
-const rainMat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.2, transparent: true, opacity: 0.6 });
-const rain = new THREE.Points(rainGeo, rainMat);
-scene.add(rain);
 
-// --- 4. MOVING FIRE SYSTEM [cite: 14] ---
+// Place trees
+const trees = [];
+for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2;
+    const radius = 22 + Math.random() * 8;
+    const tree = createTree(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    scene.add(tree);
+    trees.push(tree);
+}
+
+// ============= ROCKS =============
+function createRock(x, z) {
+    const rockGeo = new THREE.DodecahedronGeometry(1.2 + Math.random() * 1.5, 0);
+    const rockMat = new THREE.MeshStandardMaterial({ 
+        color: 0x606070,
+        roughness: 0.95,
+        metalness: 0.05
+    });
+    const rock = new THREE.Mesh(rockGeo, rockMat);
+    rock.position.set(x, 15.8, z);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    return rock;
+}
+
+// Place rocks
+const rocks = [];
+for (let i = 0; i < 25; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * 30;
+    const rock = createRock(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    scene.add(rock);
+    rocks.push(rock);
+}
+
+// ============= CAMPFIRE =============
 const fireParticles = new THREE.Group();
-for(let i=0; i<50; i++) {
-    const p = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0xff4500 }));
-    p.position.set(Math.random()-0.5, 13, Math.random()-0.5);
+for (let i = 0; i < 60; i++) {
+    const p = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4 + Math.random() * 0.3),
+        new THREE.MeshBasicMaterial({ 
+            color: new THREE.Color().setHSL(0.05 + Math.random() * 0.05, 1, 0.5 + Math.random() * 0.2)
+        })
+    );
+    p.position.set((Math.random() - 0.5) * 2.5, 14 + Math.random() * 1, (Math.random() - 0.5) * 2.5);
+    p.userData.velocity = 0.08 + Math.random() * 0.06;
+    p.userData.startY = p.position.y;
     fireParticles.add(p);
 }
 scene.add(fireParticles);
-const fireLight = new THREE.PointLight(0xff4500, 50, 50); // Fire light effect [cite: 7]
-fireLight.position.set(0, 15, 0);
+
+const fireLight = new THREE.PointLight(0xff5522, 200, 100);
+fireLight.position.set(0, 17, 0);
+fireLight.castShadow = true;
+fireLight.shadow.mapSize.width = 1024;
+fireLight.shadow.mapSize.height = 1024;
 scene.add(fireLight);
 
-// --- 5. STORM WATER [cite: 5] ---
-const water = new Water(new THREE.PlaneGeometry(10000, 10000), {
+// ============= WATER (FIXED) =============
+const waterGeometry = new THREE.PlaneGeometry(10000, 10000, 100, 100);
+const textureLoader = new THREE.TextureLoader();
+
+// Load water normals properly
+let waterNormals = textureLoader.load(
+    './assets/Water_1_M_Normal.jpg',
+    (texture) => {
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        console.log('✓ Water normals loaded');
+    },
+    undefined,
+    (err) => {
+        console.warn('✗ Water normals not found');
+    }
+);
+waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+
+const water = new Water(waterGeometry, {
     textureWidth: 1024,
     textureHeight: 1024,
-    waterNormals: new THREE.TextureLoader().load('assets/Water_1_M_Normal.jpg', (t) => t.wrapS = t.wrapT = THREE.RepeatWrapping),
-    sunDirection: new THREE.Vector3(),
+    waterNormals: waterNormals,
+    sunDirection: new THREE.Vector3(0.7, 0.5, 0.3).normalize(),
     sunColor: 0xffffff,
-    waterColor: 0x001e0f,
-    distortionScale: 8.0, 
+    waterColor: 0x002244,
+    distortionScale: 4.5,
+    fog: true,
+    alpha: 0.95
 });
 water.rotation.x = -Math.PI / 2;
+water.position.y = 0;
+water.material.transparent = true;
 scene.add(water);
 
-// --- 6. LIGHTNING & FOG [cite: 11, 12] ---
-scene.fog = new THREE.FogExp2(0x0a0a0a, 0.002);
-const thunderFlash = new THREE.PointLight(0xffffff, 0, 2000);
-thunderFlash.position.set(100, 500, 100);
+// ============= REALISTIC CLOUDS (FIXED) =============
+const cloudGroup = new THREE.Group();
+
+// Create volumetric-looking clouds using spheres
+function createVolumetricCloud(x, y, z, size) {
+    const cloud = new THREE.Group();
+    const cloudMat = new THREE.MeshStandardMaterial({
+        color: 0x8899bb,
+        transparent: true,
+        opacity: 0.4,
+        roughness: 1.0,
+        metalness: 0.0,
+        side: THREE.DoubleSide
+    });
+
+    // Multiple spheres to create volume
+    const spheres = 8 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < spheres; i++) {
+        const sphereGeo = new THREE.SphereGeometry(size * (0.5 + Math.random() * 0.8), 8, 8);
+        const sphere = new THREE.Mesh(sphereGeo, cloudMat.clone());
+        sphere.position.set(
+            (Math.random() - 0.5) * size * 2,
+            (Math.random() - 0.5) * size * 0.5,
+            (Math.random() - 0.5) * size * 2
+        );
+        cloud.add(sphere);
+    }
+    
+    cloud.position.set(x, y, z);
+    cloud.userData.speed = 0.03 + Math.random() * 0.05;
+    cloud.userData.wobble = Math.random() * Math.PI * 2;
+    return cloud;
+}
+
+// Create clouds at various distances and heights
+for (let i = 0; i < 30; i++) {
+    const angle = (i / 30) * Math.PI * 2 + Math.random();
+    const distance = 150 + Math.random() * 250;
+    const height = 80 + Math.random() * 40;
+    const size = 8 + Math.random() * 12;
+    
+    const cloud = createVolumetricCloud(
+        Math.cos(angle) * distance,
+        height,
+        Math.sin(angle) * distance,
+        size
+    );
+    cloudGroup.add(cloud);
+}
+
+scene.add(cloudGroup);
+
+// ============= RAIN =============
+const rainCount = 18000;
+const rainGeo = new THREE.BufferGeometry();
+const rainPositions = new Float32Array(rainCount * 3);
+const rainVelocities = new Float32Array(rainCount);
+
+for (let i = 0; i < rainCount; i++) {
+    const i3 = i * 3;
+    rainPositions[i3] = (Math.random() - 0.5) * 1000;
+    rainPositions[i3 + 1] = Math.random() * 800;
+    rainPositions[i3 + 2] = (Math.random() - 0.5) * 1000;
+    rainVelocities[i] = 4 + Math.random() * 2.5;
+}
+
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+const rainMat = new THREE.PointsMaterial({
+    color: 0x99bbff,
+    size: 0.5,
+    transparent: true,
+    opacity: 0.5
+});
+const rain = new THREE.Points(rainGeo, rainMat);
+scene.add(rain);
+
+// ============= LIGHTNING =============
+const thunderFlash = new THREE.PointLight(0xffffff, 0, 2500);
+thunderFlash.position.set(200, 600, 200);
 scene.add(thunderFlash);
 
-// --- ANIMATION ---
+// ============= AUDIO =============
+const listener = new THREE.AudioListener();
+camera.add(listener);
+const sound = new THREE.Audio(listener);
+const audioLoader = new THREE.AudioLoader();
+
+let audioReady = false;
+audioLoader.load(
+    './assets/rain-and-thund.mp3',
+    (buffer) => {
+        sound.setBuffer(buffer);
+        sound.setLoop(true);
+        sound.setVolume(0.3);
+        audioReady = true;
+        console.log('✓ Audio loaded - click anywhere to play');
+    },
+    undefined,
+    (err) => console.warn('✗ Audio file not found:', err)
+);
+
+document.addEventListener('click', () => {
+    if (audioReady && !sound.isPlaying) {
+        sound.play();
+        console.log('♪ Audio playing');
+    }
+}, { once: true });
+
+// ============= ANIMATION LOOP =============
 function animate() {
     requestAnimationFrame(animate);
     const time = clock.getElapsedTime();
-    const delta = clock.getDelta();
 
-    // 1. Vibrant Grass Wind 
-    grassMeshes.forEach((g, i) => {
-        g.rotation.x = Math.sin(time * 2 + i) * 0.3;
+    // Animate grass
+    grassMeshes.forEach((blade, i) => {
+        blade.rotation.x = Math.sin(time * 1.2 + i * 0.1) * 0.2;
     });
 
-    // 2. Colored Rain Movement
-    const rainPositions = rain.geometry.attributes.position.array;
-    for(let i=1; i < rainPositions.length; i+=3) {
-        rainPositions[i] -= 5.0; // Faster storm rain
-        if(rainPositions[i] < 0) rainPositions[i] = 800;
+    // Animate trees
+    trees.forEach((tree, i) => {
+        tree.rotation.z = Math.sin(time * 0.5 + i) * 0.04;
+    });
+
+    // Animate clouds smoothly
+    cloudGroup.children.forEach(cloud => {
+        cloud.position.x += cloud.userData.speed;
+        cloud.position.y += Math.sin(time * 0.3 + cloud.userData.wobble) * 0.02;
+        if (cloud.position.x > 500) {
+            cloud.position.x = -500;
+        }
+    });
+
+    // Water animation
+    water.material.uniforms['time'].value += 1.0 / 60.0;
+
+    // Rain
+    const pos = rain.geometry.attributes.position.array;
+    for (let i = 0; i < rainCount; i++) {
+        const i3 = i * 3;
+        pos[i3 + 1] -= rainVelocities[i];
+        if (pos[i3 + 1] < 0) {
+            pos[i3 + 1] = 800;
+        }
     }
     rain.geometry.attributes.position.needsUpdate = true;
 
-    // 3. Fire Flicker [cite: 14]
+    // Fire animation
     fireParticles.children.forEach(p => {
-        p.position.y += 0.1;
-        if(p.position.y > 18) p.position.y = 13;
-        p.scale.setScalar(Math.random());
+        p.position.y += p.userData.velocity;
+        if (p.position.y > p.userData.startY + 7) {
+            p.position.y = 14;
+            p.position.x = (Math.random() - 0.5) * 2.5;
+            p.position.z = (Math.random() - 0.5) * 2.5;
+        }
+        p.material.opacity = 1 - (p.position.y - 14) / 7;
+        p.scale.setScalar(0.6 + Math.random() * 0.4);
     });
-    fireLight.intensity = 40 + Math.random() * 20;
+    fireLight.intensity = 170 + Math.sin(time * 12) * 30;
 
-    // 4. Random Thunder 
-    if (Math.random() > 0.99) {
-        thunderFlash.intensity = 2000;
+    // Lightning
+    if (Math.random() > 0.987) {
+        thunderFlash.intensity = 3000 + Math.random() * 2000;
     } else {
-        thunderFlash.intensity *= 0.95;
+        thunderFlash.intensity *= 0.88;
     }
 
-    water.material.uniforms['time'].value += 1.0 / 60.0;
     controls.update();
     renderer.render(scene, camera);
 }
+
 animate();
+
+// ============= WINDOW RESIZE =============
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+console.log('=== CSE378 Night Storm Scene ===');
+console.log('Scene ready! Click to start audio');
