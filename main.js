@@ -319,26 +319,81 @@ camera.add(listener);
 const sound = new THREE.Audio(listener);
 const audioLoader = new THREE.AudioLoader();
 
-let audioReady = false;
-audioLoader.load(
-    './assets/rain-and-thund.mp3',
-    (buffer) => {
-        sound.setBuffer(buffer);
-        sound.setLoop(true);
-        sound.setVolume(0.3);
-        audioReady = true;
-        console.log('✓ Audio loaded - click anywhere to play');
-    },
-    undefined,
-    (err) => console.warn('✗ Audio file not found:', err)
-);
+// Create UI indicator
+const audioUI = document.createElement('div');
+audioUI.style.position = 'absolute';
+audioUI.style.top = '20px';
+audioUI.style.left = '20px';
+audioUI.style.padding = '15px 25px';
+audioUI.style.background = 'rgba(0, 0, 0, 0.7)';
+audioUI.style.color = 'white';
+audioUI.style.fontFamily = 'Arial, sans-serif';
+audioUI.style.fontSize = '16px';
+audioUI.style.borderRadius = '8px';
+audioUI.style.cursor = 'pointer';
+audioUI.style.userSelect = 'none';
+audioUI.style.zIndex = '1000';
+audioUI.innerHTML = '🔊 Click to Enable Sound';
+document.body.appendChild(audioUI);
 
-document.addEventListener('click', () => {
+let audioReady = false;
+
+// Try multiple possible filenames
+const possibleAudioFiles = [
+    './assets/rain-and-thund.mp3',
+    './assets/rain-and-thunder.mp3',
+    './assets/rain.mp3',
+    './assets/thunder.mp3'
+];
+
+let currentFileIndex = 0;
+
+function tryLoadAudio() {
+    if (currentFileIndex >= possibleAudioFiles.length) {
+        console.warn('✗ No audio file found. Tried:', possibleAudioFiles);
+        audioUI.innerHTML = '🔇 Audio Not Found';
+        audioUI.style.background = 'rgba(100, 0, 0, 0.7)';
+        return;
+    }
+
+    const audioFile = possibleAudioFiles[currentFileIndex];
+    console.log('Trying to load:', audioFile);
+    
+    audioLoader.load(
+        audioFile,
+        (buffer) => {
+            sound.setBuffer(buffer);
+            sound.setLoop(true);
+            sound.setVolume(0.4);
+            audioReady = true;
+            audioUI.innerHTML = '🔊 Click to Play Sound';
+            audioUI.style.background = 'rgba(0, 100, 0, 0.7)';
+            console.log('✓ Audio loaded successfully:', audioFile);
+        },
+        undefined,
+        (err) => {
+            console.warn('Failed to load:', audioFile);
+            currentFileIndex++;
+            tryLoadAudio();
+        }
+    );
+}
+
+tryLoadAudio();
+
+// Click handler
+audioUI.addEventListener('click', () => {
     if (audioReady && !sound.isPlaying) {
         sound.play();
+        audioUI.innerHTML = '🔊 Sound Playing';
+        audioUI.style.background = 'rgba(0, 150, 0, 0.8)';
         console.log('♪ Audio playing');
+    } else if (sound.isPlaying) {
+        sound.pause();
+        audioUI.innerHTML = '🔊 Click to Resume';
+        audioUI.style.background = 'rgba(100, 100, 0, 0.7)';
     }
-}, { once: true });
+});
 
 // ============= ANIMATION LOOP =============
 function animate() {
