@@ -31,8 +31,10 @@ const mouse = new THREE.Vector2();
 let gameStarted = false;
 let gamePaused = false;
 let playerBoat = null;
+let hasCoin = false;
 let selectedObject = null;
 const interactiveObjects = [];
+const AcquiredObjects = [];
 const collisionBoxes = [];
 
 // ============= SKYBOX (Day/Night) =============
@@ -99,6 +101,23 @@ scene.add(moonLight);
 const fillLight = new THREE.HemisphereLight(0x4455bb, 0x222244, 1.5);
 scene.add(fillLight);
 
+// ============= Coin =============
+let coin = null;
+function createCoin() {
+    const coinGeometry = new THREE.CylinderGeometry(1, 1, 3, 32);
+    const coinMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 1.0, roughness: 0.3 });
+    const coin = new THREE.Mesh(coinGeometry, coinMaterial);
+    let x = Math.floor(Math.random() * 50) + 20;
+    let z = Math.floor(Math.random() * 50) + 20;
+    coin.position.set(x, 1, z);
+    coin.castShadow = true;
+    coin.userData.type = 'coin';
+    scene.add(coin);
+    interactiveObjects.push(coin);
+    collisionBoxes.push(new THREE.Box3().setFromObject(coin));
+    hasCoin = false;
+    return coin;
+}
 // ============= ISLAND =============
 const islandGeometry = new THREE.CylinderGeometry(35, 40, 15, 64);
 const islandMaterial = new THREE.MeshStandardMaterial({ color: 0x2d4d2d, roughness: 0.85 });
@@ -136,7 +155,7 @@ function createTree(x, z) {
     trunk.position.y = 3.5;
     trunk.castShadow = true;
     tree.add(trunk);
-    
+
     const leaves = new THREE.Mesh(
         new THREE.ConeGeometry(3.5, 9, 8),
         new THREE.MeshStandardMaterial({ color: 0x2a5a2a, roughness: 0.9 })
@@ -182,7 +201,7 @@ for (let i = 0; i < 25; i++) {
 function createHouse(x, z, rotation = 0) {
     const house = new THREE.Group();
     house.userData.type = 'house';
-    
+
     // Base/walls
     const walls = new THREE.Mesh(
         new THREE.BoxGeometry(6, 5, 5),
@@ -192,7 +211,7 @@ function createHouse(x, z, rotation = 0) {
     walls.castShadow = true;
     walls.receiveShadow = true;
     house.add(walls);
-    
+
     // Roof
     const roof = new THREE.Mesh(
         new THREE.ConeGeometry(5, 3, 4),
@@ -202,7 +221,7 @@ function createHouse(x, z, rotation = 0) {
     roof.rotation.y = Math.PI / 4;
     roof.castShadow = true;
     house.add(roof);
-    
+
     // Door
     const door = new THREE.Mesh(
         new THREE.BoxGeometry(1.2, 2.5, 0.1),
@@ -210,7 +229,7 @@ function createHouse(x, z, rotation = 0) {
     );
     door.position.set(0, 1.25, 2.55);
     house.add(door);
-    
+
     // Window
     const window1 = new THREE.Mesh(
         new THREE.BoxGeometry(1, 1, 0.1),
@@ -218,7 +237,7 @@ function createHouse(x, z, rotation = 0) {
     );
     window1.position.set(2, 3, 2.55);
     house.add(window1);
-    
+
     house.position.set(x, 15, z);
     house.rotation.y = rotation;
     return house;
@@ -246,7 +265,7 @@ function createBoat(x, z, isPlayer = false) {
     boat.userData.isPlayer = isPlayer;
     boat.userData.velocity = new THREE.Vector3();
     boat.userData.baseY = 1;
-    
+
     // Hull
     const hullShape = new THREE.Shape();
     hullShape.moveTo(-3, 0);
@@ -254,16 +273,16 @@ function createBoat(x, z, isPlayer = false) {
     hullShape.lineTo(2.5, -1.5);
     hullShape.lineTo(3, 0);
     hullShape.lineTo(-3, 0);
-    
+
     const hullGeo = new THREE.ExtrudeGeometry(hullShape, { depth: 2, bevelEnabled: false });
-    const hull = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({ 
-        color: isPlayer ? 0x8B0000 : 0x4a3520, roughness: 0.7 
+    const hull = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({
+        color: isPlayer ? 0x8B0000 : 0x4a3520, roughness: 0.7
     }));
     hull.rotation.x = Math.PI / 2;
     hull.position.y = 0.5;
     hull.castShadow = true;
     boat.add(hull);
-    
+
     // Deck
     const deck = new THREE.Mesh(
         new THREE.BoxGeometry(5, 0.3, 1.8),
@@ -272,7 +291,7 @@ function createBoat(x, z, isPlayer = false) {
     deck.position.y = 0.65;
     deck.castShadow = true;
     boat.add(deck);
-    
+
     // Mast
     const mast = new THREE.Mesh(
         new THREE.CylinderGeometry(0.1, 0.15, 6, 8),
@@ -281,18 +300,18 @@ function createBoat(x, z, isPlayer = false) {
     mast.position.y = 3.5;
     mast.castShadow = true;
     boat.add(mast);
-    
+
     // Sail
     const sailGeo = new THREE.BufferGeometry();
-    const vertices = new Float32Array([0,1,0, 0,6,0, 2.5,3.5,0.3]);
+    const vertices = new Float32Array([0, 1, 0, 0, 6, 0, 2.5, 3.5, 0.3]);
     sailGeo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     sailGeo.computeVertexNormals();
-    const sail = new THREE.Mesh(sailGeo, new THREE.MeshStandardMaterial({ 
-        color: 0xeeeeee, side: THREE.DoubleSide, roughness: 0.9 
+    const sail = new THREE.Mesh(sailGeo, new THREE.MeshStandardMaterial({
+        color: 0xeeeeee, side: THREE.DoubleSide, roughness: 0.9
     }));
     sail.castShadow = true;
     boat.add(sail);
-    
+
     boat.position.set(x, 1, z);
     return boat;
 }
@@ -307,7 +326,7 @@ const boats = [playerBoat];
 const npcBoatData = [
     { x: -70, z: 50, angle: 0, speed: 0.15 },
     { x: 80, z: -40, angle: Math.PI, speed: 0.12 },
-    { x: -50, z: -70, angle: Math.PI/2, speed: 0.1 }
+    { x: -50, z: -70, angle: Math.PI / 2, speed: 0.1 }
 ];
 npcBoatData.forEach(data => {
     const boat = createBoat(data.x, data.z);
@@ -331,7 +350,7 @@ function createPerson(x, z) {
     person.userData.walkRadius = 3 + Math.random() * 5;
     person.userData.centerX = x;
     person.userData.centerZ = z;
-    
+
     // Body
     const body = new THREE.Mesh(
         new THREE.CylinderGeometry(0.35, 0.4, 1.2, 8),
@@ -340,7 +359,7 @@ function createPerson(x, z) {
     body.position.y = 1.4;
     body.castShadow = true;
     person.add(body);
-    
+
     // Head
     const head = new THREE.Mesh(
         new THREE.SphereGeometry(0.3, 8, 8),
@@ -349,19 +368,19 @@ function createPerson(x, z) {
     head.position.y = 2.3;
     head.castShadow = true;
     person.add(head);
-    
+
     // Legs
     const legMat = new THREE.MeshStandardMaterial({ color: 0x333344 });
     const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.8, 6), legMat);
     leftLeg.position.set(-0.15, 0.4, 0);
     person.add(leftLeg);
     person.userData.leftLeg = leftLeg;
-    
+
     const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.8, 6), legMat);
     rightLeg.position.set(0.15, 0.4, 0);
     person.add(rightLeg);
     person.userData.rightLeg = rightLeg;
-    
+
     // Arms
     const armMat = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
     const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.7, 6), armMat);
@@ -369,13 +388,13 @@ function createPerson(x, z) {
     leftArm.rotation.z = 0.3;
     person.add(leftArm);
     person.userData.leftArm = leftArm;
-    
+
     const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.7, 6), armMat);
     rightArm.position.set(0.5, 1.5, 0);
     rightArm.rotation.z = -0.3;
     person.add(rightArm);
     person.userData.rightArm = rightArm;
-    
+
     person.position.set(x, 15, z);
     return person;
 }
@@ -402,9 +421,9 @@ function createAnimal(x, z, type = 'dog') {
     animal.userData.moveRadius = 4 + Math.random() * 6;
     animal.userData.centerX = x;
     animal.userData.centerZ = z;
-    
+
     const bodyColor = type === 'dog' ? 0x8B4513 : 0x333333;
-    
+
     // Body
     const body = new THREE.Mesh(
         new THREE.CapsuleGeometry(0.3, 0.8, 4, 8),
@@ -414,7 +433,7 @@ function createAnimal(x, z, type = 'dog') {
     body.position.y = 0.5;
     body.castShadow = true;
     animal.add(body);
-    
+
     // Head
     const head = new THREE.Mesh(
         new THREE.SphereGeometry(0.25, 8, 8),
@@ -423,7 +442,7 @@ function createAnimal(x, z, type = 'dog') {
     head.position.set(0.6, 0.6, 0);
     head.castShadow = true;
     animal.add(head);
-    
+
     // Legs
     const legMat = new THREE.MeshStandardMaterial({ color: bodyColor });
     const legPositions = [[-0.3, 0, 0.2], [-0.3, 0, -0.2], [0.3, 0, 0.2], [0.3, 0, -0.2]];
@@ -434,7 +453,7 @@ function createAnimal(x, z, type = 'dog') {
         animal.add(leg);
         animal.userData.legs.push(leg);
     });
-    
+
     // Tail
     const tail = new THREE.Mesh(
         new THREE.CylinderGeometry(0.03, 0.06, 0.4, 6),
@@ -444,7 +463,7 @@ function createAnimal(x, z, type = 'dog') {
     tail.rotation.z = Math.PI / 3;
     animal.add(tail);
     animal.userData.tail = tail;
-    
+
     animal.position.set(x, 15, z);
     return animal;
 }
@@ -469,7 +488,7 @@ fireParticles.userData.type = 'fire';
 for (let i = 0; i < 60; i++) {
     const p = new THREE.Mesh(
         new THREE.SphereGeometry(0.4 + Math.random() * 0.3),
-        new THREE.MeshBasicMaterial({ 
+        new THREE.MeshBasicMaterial({
             color: new THREE.Color().setHSL(0.05 + Math.random() * 0.05, 1, 0.5 + Math.random() * 0.2),
             transparent: true
         })
@@ -490,8 +509,8 @@ interactiveObjects.push(fireParticles);
 // ============= SMOKE EFFECT (Student 1 bonus) =============
 const smokeParticles = new THREE.Group();
 smokeParticles.userData.type = 'smoke';
-const smokeMat = new THREE.MeshBasicMaterial({ 
-    color: 0x555555, transparent: true, opacity: 0.3, side: THREE.DoubleSide 
+const smokeMat = new THREE.MeshBasicMaterial({
+    color: 0x555555, transparent: true, opacity: 0.3, side: THREE.DoubleSide
 });
 for (let i = 0; i < 40; i++) {
     const smoke = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), smokeMat.clone());
@@ -654,21 +673,21 @@ let audioStarted = false;
 function startAudioContext() {
     if (audioStarted) return;
     audioStarted = true;
-    
+
     // Start fire sound
     fireNoiseNode = createFireSound();
     fireNoiseNode.start();
-    
+
     // Setup water splash
     waterSplashGain = createWaterSplashSound(fireCtx);
-    
+
     // Load ambient sound
     audioLoader.load('./assets/rain-and-thunder.mp3', (buffer) => {
         ambientSound.setBuffer(buffer);
         ambientSound.setLoop(true);
         ambientSound.setVolume(0.4);
         ambientSound.play();
-    }, undefined, () => {});
+    }, undefined, () => { });
 }
 
 
@@ -745,15 +764,15 @@ let cameraFollow = true;
 
 document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
-    
+
     // P works even when paused
     if (key === 'p' && gameStarted) {
         togglePause();
         return;
     }
-    
+
     if (!gameStarted || gamePaused) return;
-    
+
     if (keys.hasOwnProperty(key)) keys[key] = true;
     if (key === 'c') {
         cameraFollow = !cameraFollow;
@@ -770,20 +789,20 @@ document.addEventListener('keyup', (e) => {
 document.addEventListener('click', (e) => {
     if (!gameStarted || gamePaused) return;
     startAudioContext();
-    
+
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    
+
     const intersects = raycaster.intersectObjects(interactiveObjects, true);
     if (intersects.length > 0) {
         let obj = intersects[0].object;
         while (obj.parent && !obj.userData.type) obj = obj.parent;
-        
+
         if (obj.userData.type) {
             selectedObject = obj;
             document.getElementById('selectionInfo').style.display = 'block';
-            
+
             const typeLabels = {
                 'boat': obj.userData.isPlayer ? 'Your Boat' : 'NPC Boat',
                 'house': 'House',
@@ -795,7 +814,8 @@ document.addEventListener('click', (e) => {
                 'smoke': 'Smoke',
                 'cloud': 'Cloud',
                 'water': 'Sea Water',
-                'island': 'Island'
+                'island': 'Island',
+                'coin': 'Coin'
             };
             document.getElementById('selectedName').textContent = typeLabels[obj.userData.type] || obj.userData.type;
         }
@@ -811,11 +831,13 @@ function togglePause() {
 }
 
 function startGame() {
+    coin = createCoin();
     gameStarted = true;
     startScreen.style.display = 'none';
     hud.style.display = 'block';
     startAudioContext();
 }
+
 
 let hasWon = false;
 
@@ -823,9 +845,15 @@ function checkWinCondition() {
     if (!playerBoat || hasWon) return;
     const dist = Math.sqrt(playerBoat.position.x ** 2 + playerBoat.position.z ** 2);
     if (dist < 45) {
-        hasWon = true;
-        gameStarted = false;
-        winScreen.style.display = 'block';
+        if (hasCoin) {
+            hasWon = true;
+            gameStarted = false;
+            winScreen.style.display = 'block';
+        } else {
+            document.getElementById('objective').textContent = 'Objective: Find the coin on the island';
+            restartGame()
+        }
+
     }
 }
 
@@ -835,7 +863,11 @@ function restartGame() {
     winScreen.style.display = 'none';
     hasWon = false;
     gameStarted = true;
+    hasCoin = false;
     document.getElementById('objective').textContent = 'Objective: Navigate to the island';
+    if (!interactiveObjects.includes(coin)) { 
+        coin = createCoin();
+    }
 }
 
 // Button events
@@ -851,11 +883,11 @@ function getWaveHeight(x, z, time) {
 
 function updatePlayerBoat(time, delta) {
     if (!playerBoat || !gameStarted || gamePaused) return;
-    
+
     const speed = 0.5;
     const rotSpeed = 0.03;
     let moving = false;
-    
+
     if (keys.w) {
         playerBoat.position.x -= Math.sin(playerBoat.rotation.y) * speed;
         playerBoat.position.z -= Math.cos(playerBoat.rotation.y) * speed;
@@ -868,18 +900,18 @@ function updatePlayerBoat(time, delta) {
     }
     if (keys.a) playerBoat.rotation.y += rotSpeed;
     if (keys.d) playerBoat.rotation.y -= rotSpeed;
-    
+
     // Wave physics
     const waveY = getWaveHeight(playerBoat.position.x, playerBoat.position.z, time);
     playerBoat.position.y = 1 + waveY;
     playerBoat.rotation.x = Math.sin(time * 2) * 0.05;
     playerBoat.rotation.z = Math.cos(time * 1.5) * 0.03;
-    
+
     // Water splash sound when moving
     if (waterSplashGain) {
         waterSplashGain.gain.value = moving ? 0.15 : 0;
     }
-    
+
     // Camera follow
     if (cameraFollow) {
         const camOffset = new THREE.Vector3(0, 25, 40);
@@ -887,22 +919,43 @@ function updatePlayerBoat(time, delta) {
         camera.position.lerp(playerBoat.position.clone().add(camOffset), 0.05);
         controls.target.lerp(playerBoat.position, 0.1);
     }
-    
+
+    if (playerBoat.position.x - coin.position.x < 5 &&
+        playerBoat.position.x - coin.position.x > -5 &&
+        playerBoat.position.z - coin.position.z < 5 &&
+        playerBoat.position.z - coin.position.z > -5 &&
+        !hasCoin) {
+            console.log("Coin collected");
+            hasCoin = true;
+            scene.remove(coin);
+            const interactiveIndex = interactiveObjects.indexOf(coin);
+            if (interactiveIndex > -1) {
+                interactiveObjects.splice(interactiveIndex, 1);
+            }
+            const coinBox = collisionBoxes.find(box => box.intersectsBox(new THREE.Box3().setFromObject(coin)));
+            if (coinBox) {
+                const boxIndex = collisionBoxes.indexOf(coinBox);
+                if (boxIndex > -1) {
+                    collisionBoxes.splice(boxIndex, 1);
+                }
+            }
+            document.getElementById('objective').textContent = 'Objective: Return to the island with the coin';
+    };
     checkWinCondition();
 }
 
 function updateNPCBoats(time) {
     boats.forEach((boat, i) => {
         if (boat.userData.isPlayer) return;
-        
+
         boat.userData.patrolAngle += boat.userData.patrolSpeed * 0.01;
         const angle = boat.userData.patrolAngle;
         const radius = boat.userData.patrolRadius;
-        
+
         boat.position.x = Math.cos(angle) * radius;
         boat.position.z = Math.sin(angle) * radius;
         boat.rotation.y = -angle + Math.PI / 2;
-        
+
         const waveY = getWaveHeight(boat.position.x, boat.position.z, time);
         boat.position.y = 1 + waveY;
         boat.rotation.x = Math.sin(time * 2 + i) * 0.05;
@@ -914,11 +967,11 @@ function updatePeople(time) {
     people.forEach((person, i) => {
         person.userData.walkPhase += person.userData.walkSpeed * 0.02;
         const phase = person.userData.walkPhase;
-        
+
         person.position.x = person.userData.centerX + Math.sin(phase) * person.userData.walkRadius;
         person.position.z = person.userData.centerZ + Math.cos(phase) * person.userData.walkRadius;
         person.rotation.y = phase + Math.PI;
-        
+
         // Walking animation
         const legSwing = Math.sin(time * 8 + i) * 0.4;
         person.userData.leftLeg.rotation.x = legSwing;
@@ -932,14 +985,14 @@ function updateAnimals(time) {
     animals.forEach((animal, i) => {
         animal.userData.movePhase += animal.userData.moveSpeed * 0.015;
         const phase = animal.userData.movePhase;
-        
+
         animal.position.x = animal.userData.centerX + Math.sin(phase) * animal.userData.moveRadius;
         animal.position.z = animal.userData.centerZ + Math.cos(phase * 0.7) * animal.userData.moveRadius;
         animal.rotation.y = Math.atan2(
             Math.cos(phase) * animal.userData.moveRadius,
             -Math.sin(phase * 0.7) * animal.userData.moveRadius
         );
-        
+
         // Leg animation
         const legSwing = Math.sin(time * 12 + i) * 0.3;
         animal.userData.legs.forEach((leg, j) => {
@@ -955,7 +1008,7 @@ function animate() {
     requestAnimationFrame(animate);
     const time = clock.getElapsedTime();
     const delta = clock.getDelta();
-    
+
     if (gamePaused) {
         renderer.render(scene, camera);
         return;
@@ -1009,7 +1062,7 @@ function animate() {
         smoke.rotation.z += smoke.userData.rotSpeed;
         smoke.material.opacity = 0.3 * (1 - (smoke.position.y - smoke.userData.startY) / 15);
         smoke.scale.setScalar(1 + (smoke.position.y - smoke.userData.startY) * 0.1);
-        
+
         if (smoke.position.y > smoke.userData.startY + 15) {
             smoke.position.y = smoke.userData.startY;
             smoke.position.x = (Math.random() - 0.5) * 2;
